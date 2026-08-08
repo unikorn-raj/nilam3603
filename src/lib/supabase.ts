@@ -1,42 +1,31 @@
 import { createClient, SupabaseClient, User as SupabaseUser } from "@supabase/supabase-js";
 import { UserProfile, PlanType, AccountStatus, UserRole, AdminAuditLog } from "../types";
 
-const env = typeof import.meta !== "undefined" && (import.meta as any).env ? (import.meta as any).env : {};
-
-// Read shared Unikorn360 Supabase configuration from environment variables
 const supabaseUrl =
-  env.VITE_SUPABASE_URL ||
-  (typeof process !== "undefined" && process.env && process.env.VITE_SUPABASE_URL) ||
+  (import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+  (typeof process !== "undefined" && process.env ? process.env.VITE_SUPABASE_URL : "") ||
   "";
 
 const supabaseAnonKey =
-  env.VITE_SUPABASE_ANON_KEY ||
-  (typeof process !== "undefined" && process.env && process.env.VITE_SUPABASE_ANON_KEY) ||
+  (import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+  (typeof process !== "undefined" && process.env ? process.env.VITE_SUPABASE_ANON_KEY : "") ||
   "";
 
 export const isSupabaseConfigured = Boolean(supabaseUrl) && Boolean(supabaseAnonKey);
 export const isSupabaseMockEnabled = !isSupabaseConfigured;
 
-export let supabase: SupabaseClient;
-
-try {
-  supabase = createClient(supabaseUrl || "https://unconfigured.supabase.co", supabaseAnonKey || "unconfigured-anon-key", {
+export const supabase: SupabaseClient = createClient(
+  supabaseUrl || "https://unconfigured.supabase.co",
+  supabaseAnonKey || "unconfigured-anon-key",
+  {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
+      flowType: "pkce",
     },
-  });
-} catch (e) {
-  console.warn("Supabase client initialization warning:", e);
-  supabase = createClient(supabaseUrl || "https://unconfigured.supabase.co", supabaseAnonKey || "unconfigured-anon-key", {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
-}
+  }
+);
 
 const PROFILES_TABLE = "profiles";
 const CASES_TABLE = "property_cases";
@@ -141,45 +130,13 @@ export async function fetchUserProfileForAuthUser(authUser: SupabaseUser | null)
 }
 
 /**
- * Standardize Supabase User
- */
-export function mapSupabaseUser(user: SupabaseUser | null | any): any {
-  if (!user) return null;
-  const metadata = user.user_metadata || {};
-  const email = user.email || metadata.email || "";
-  const nameFromEmail = email ? email.split("@")[0] : "User";
-
-  return {
-    ...user,
-    uid: user.id || user.uid,
-    id: user.id || user.uid,
-    email,
-    displayName:
-      metadata.full_name ||
-      metadata.name ||
-      metadata.displayName ||
-      user.displayName ||
-      nameFromEmail.toUpperCase(),
-    photoURL:
-      metadata.avatar_url ||
-      metadata.picture ||
-      metadata.photoURL ||
-      user.photoURL ||
-      `https://api.dicebear.com/7.x/initials/svg?seed=${user.id || "user"}&backgroundColor=6366f1`,
-    emailVerified: user.email_confirmed_at ? true : user.emailVerified ?? true,
-    isAnonymous: false,
-  };
-}
-
-/**
  * Trigger Google OAuth Sign-In via Supabase Auth
  */
 export const signInWithGoogle = async (options?: { useRedirect?: boolean }) => {
-  const redirectTo = window.location.origin;
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo,
+      redirectTo: `${window.location.origin}`,
       queryParams: {
         access_type: "offline",
         prompt: "select_account",
@@ -187,22 +144,44 @@ export const signInWithGoogle = async (options?: { useRedirect?: boolean }) => {
     },
   });
 
-  if (error) {
-    console.error("Supabase OAuth Sign-In Error:", error);
-    throw error;
-  }
+  if (error) throw error;
   return data;
 };
 
 /**
  * Sign out current user session
  */
-export const logoutUser = async () => {
+export const signOut = async () => {
   const { error } = await supabase.auth.signOut();
-  if (error) {
-    console.error("Logout failed:", error);
-    throw error;
-  }
+  if (error) throw error;
+};
+
+export const logoutUser = signOut;
+
+export const getCurrentUser = async () => {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error) throw error;
+  return user;
+};
+
+export const getCurrentSession = async () => {
+  const {
+    data: { session },
+    error,
+  } = await supabase.auth.getSession();
+
+  if (error) throw error;
+  return session;
+};
+
+export const onAuthStateChange = (
+  callback: Parameters<typeof supabase.auth.onAuthStateChange>[0]
+) => {
+  return supabase.auth.onAuthStateChange(callback);
 };
 
 /**

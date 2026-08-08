@@ -29,6 +29,7 @@ import {
   Smartphone, Calculator, Hourglass, ShieldAlert
 } from "lucide-react";
 import {
+  supabase,
   signInWithGoogle,
   logoutUser,
   subscribeToAuthChanges,
@@ -204,9 +205,10 @@ export default function App() {
       let authToken = "";
       if (user) {
         try {
-          authToken = await user.getIdToken();
+          const { data: { session } } = await supabase.auth.getSession();
+          authToken = session?.access_token || "";
         } catch (e) {
-          console.warn("Failed to obtain Auth ID Token:", e);
+          console.warn("Failed to obtain Supabase Auth Token:", e);
         }
       }
 
@@ -219,12 +221,27 @@ export default function App() {
         body: JSON.stringify({ intake, rawDescription })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "The Unikorn360 engine returned an unexpected error.");
+      const contentType = response.headers.get("content-type") || "";
+      let analyzedData: any = null;
+
+      if (contentType.includes("application/json")) {
+        try {
+          analyzedData = await response.json();
+        } catch (jsonErr) {
+          console.error("JSON parse error from /api/analyze response:", jsonErr);
+        }
       }
 
-      const analyzedData = await response.json();
+      if (!response.ok) {
+        const errorMsg = analyzedData?.error || `பகுப்பாய்வு சேவையில் பிழை உருவானது (${response.status}).`;
+        throw new Error(errorMsg);
+      }
+
+      if (!analyzedData) {
+        const rawText = await response.text().catch(() => "");
+        console.error("Non-JSON response received from /api/analyze:", rawText);
+        throw new Error("சேவையகத்திலிருந்து செல்லுபடியாகாத தரவு பெறப்பட்டது (Invalid JSON response).");
+      }
       
       const newCase: PropertyCase = {
         ...analyzedData,

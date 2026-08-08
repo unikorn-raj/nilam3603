@@ -104,12 +104,25 @@ export function DocumentDraftPanel({ caseData, onUpdateDraft }: DocumentDraftPan
         })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "வரைவை மேம்படுத்துவதில் தோல்வி அடைந்தது.");
+      const contentType = response.headers.get("content-type") || "";
+      let data: any = null;
+
+      if (contentType.includes("application/json")) {
+        try {
+          data = await response.json();
+        } catch (jsonErr) {
+          console.error("JSON parse error from /api/draft response:", jsonErr);
+        }
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        const errorMsg = data?.error || `வரைவை மேம்படுத்துவதில் தோல்வி அடைந்தது (${response.status}).`;
+        throw new Error(errorMsg);
+      }
+
+      if (!data) {
+        throw new Error("சேவையகத்திலிருந்து செல்லுபடியாகாத தரவு பெறப்பட்டது.");
+      }
       setDraftTitle(data.documentTitle);
       setDraftContent(data.documentContent);
       
